@@ -216,7 +216,4 @@ app.post('/api/logout', (req, res) => {
 app.listen(PORT, () => {
     console.log(`MIST Chat Studio running on http://localhost:${PORT}`);
     console.log(`GitHub OAuth callback: ${REDIRECT_URI}`);
-});
-
-
-
+})
