@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const fetch = require('node-fetch');
@@ -22,7 +23,7 @@ const REDIRECT_URI = process.env.REDIRECT_URI || `http://localhost:${PORT}/auth/
 function authenticateToken(req, res, next) {
     const token = req.cookies.token || req.headers.authorization?.split(' ')[1];
     if (!token) return res.status(401).json({ error: 'Access denied' });
-    
+
     try {
         const user = jwt.verify(token, JWT_SECRET);
         req.user = user;
@@ -36,24 +37,24 @@ function authenticateToken(req, res, next) {
 app.get('/auth/github', (req, res) => {
     const state = require('crypto').randomBytes(16).toString('hex');
     res.cookie('oauth_state', state, { httpOnly: true, maxAge: 600000 });
-    
+
     const params = new URLSearchParams({
         client_id: GITHUB_CLIENT_ID,
         redirect_uri: REDIRECT_URI,
         scope: 'user:email',
         state: state
     });
-    
+
     res.redirect(`https://github.com/login/oauth/authorize?${params}`);
 });
 
 app.get('/auth/callback', async (req, res) => {
     const { code, state } = req.query;
     const savedState = req.cookies.oauth_state;
-    
+
     if (!code) return res.status(400).send('Authorization code missing');
     if (state !== savedState) return res.status(403).send('Invalid state parameter');
-    
+
     try {
         // Exchange code for access token
         const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
@@ -69,10 +70,10 @@ app.get('/auth/callback', async (req, res) => {
                 redirect_uri: REDIRECT_URI
             })
         });
-        
+
         const tokenData = await tokenRes.json();
         if (tokenData.error) throw new Error(tokenData.error_description);
-        
+
         // Fetch user info
         const userRes = await fetch('https://api.github.com/user', {
             headers: { 
@@ -81,7 +82,7 @@ app.get('/auth/callback', async (req, res) => {
             }
         });
         const userData = await userRes.json();
-        
+
         // Fetch user emails
         const emailRes = await fetch('https://api.github.com/user/emails', {
             headers: { 
@@ -91,7 +92,7 @@ app.get('/auth/callback', async (req, res) => {
         });
         const emails = await emailRes.json();
         const primaryEmail = emails.find(e => e.primary)?.email || emails[0]?.email;
-        
+
         // Create JWT
         const user = {
             id: userData.id,
@@ -100,16 +101,16 @@ app.get('/auth/callback', async (req, res) => {
             email: primaryEmail,
             avatar_url: userData.avatar_url
         };
-        
+
         const jwtToken = jwt.sign(user, JWT_SECRET, { expiresIn: '7d' });
-        
+
         res.cookie('token', jwtToken, { 
             httpOnly: true, 
             secure: process.env.NODE_ENV === 'production',
             maxAge: 7 * 24 * 60 * 60 * 1000,
             sameSite: 'strict'
         });
-        
+
         res.redirect('/');
     } catch (err) {
         console.error('OAuth error:', err);
@@ -121,10 +122,10 @@ app.get('/auth/callback', async (req, res) => {
 app.post('/api/chat/:provider', authenticateToken, async (req, res) => {
     const { provider } = req.params;
     const { model, messages, temperature, max_tokens } = req.body;
-    
+
     try {
         let response;
-        
+
         switch(provider) {
             case 'openai':
                 response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -136,7 +137,7 @@ app.post('/api/chat/:provider', authenticateToken, async (req, res) => {
                     body: JSON.stringify({ model, messages, temperature, max_tokens, stream: false })
                 });
                 break;
-                
+
             case 'anthropic':
                 const systemMsg = messages.find(m => m.role === 'system');
                 const chatMessages = messages.filter(m => m.role !== 'system');
@@ -156,7 +157,7 @@ app.post('/api/chat/:provider', authenticateToken, async (req, res) => {
                     })
                 });
                 break;
-                
+
             case 'gemini':
                 const geminiMessages = messages.map(m => ({
                     role: m.role === 'assistant' ? 'model' : m.role === 'system' ? 'user' : m.role,
@@ -171,7 +172,7 @@ app.post('/api/chat/:provider', authenticateToken, async (req, res) => {
                     })
                 });
                 break;
-                
+
             case 'cloudflare':
                 const [accountId, apiToken] = process.env.CLOUDFLARE_API_TOKEN?.split('|') || ['', ''];
                 response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`, {
@@ -183,19 +184,19 @@ app.post('/api/chat/:provider', authenticateToken, async (req, res) => {
                     body: JSON.stringify({ messages })
                 });
                 break;
-                
+
             default:
                 return res.status(400).json({ error: 'Unknown provider' });
         }
-        
+
         if (!response.ok) {
             const error = await response.text();
             throw new Error(`${provider} API error: ${response.status} - ${error}`);
         }
-        
+
         const data = await response.json();
         res.json(data);
-        
+
     } catch (err) {
         console.error('API proxy error:', err);
         res.status(500).json({ error: err.message });
@@ -216,4 +217,4 @@ app.post('/api/logout', (req, res) => {
 app.listen(PORT, () => {
     console.log(`MIST Chat Studio running on http://localhost:${PORT}`);
     console.log(`GitHub OAuth callback: ${REDIRECT_URI}`);
-})
+});
