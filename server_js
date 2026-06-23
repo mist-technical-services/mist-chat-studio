@@ -217,9 +217,6 @@ app.listen(PORT, () => {
     console.log(`MIST Chat Studio running on http://localhost:${PORT}`);
     console.log(`GitHub OAuth callback: ${REDIRECT_URI}`);
 });
-'''
 
-with open('/mnt/agents/output/server.js', 'w') as f:
-    f.write(server_js)
 
-print("server.js created successfully!")
+
